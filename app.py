@@ -23,11 +23,8 @@ from functools import wraps
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "tgs-secret-key-change-in-production")
 
-CORS(app, supports_credentials=True, origins=[
-    "http://localhost:5173",
-    "http://localhost:5000",
-    os.environ.get("FRONTEND_URL", "https://tgs-frontend-git-main-tanmay-warkes-projects.vercel.app/")
-])
+CORS(app, supports_credentials=True, origins="*")
+
 
 # ── Firebase Setup ─────────────────────────────────────────────────────────────
 def init_firebase():
