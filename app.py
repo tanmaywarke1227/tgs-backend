@@ -265,6 +265,50 @@ def get_student_subjects():
     return jsonify({"subjects": subjects}), 200
 
 
+@app.route("/api/student/submissions", methods=["GET"])
+@login_required
+@role_required("student")
+def get_student_submissions():
+    """Get all submission statuses for the logged-in student"""
+    student_id = current_user.id
+    submissions = db.collection("submissions").where("studentId", "==", student_id).get()
+    
+    result = []
+    for doc in submissions:
+        result.append(doc.to_dict())
+        
+    return jsonify({"submissions": result}), 200
+
+
+@app.route("/api/student/check-eligibility", methods=["GET"])
+@login_required
+@role_required("student")
+def check_eligibility():
+    """Check if all subjects are verified to unlock certificate/hall ticket"""
+    student_id = current_user.id
+    
+    student_doc = db.collection("users").document(student_id).get()
+    if not student_doc.exists:
+        return jsonify({"error": "Student not found"}), 404
+        
+    student_data = student_doc.to_dict()
+    subject_ids = student_data.get("subjects", [])
+    
+    if not subject_ids:
+        return jsonify({"eligible": False, "message": "No subjects enrolled."}), 200
+        
+    submissions = db.collection("submissions").where("studentId", "==", student_id).get()
+    verified_subjects = set()
+    for doc in submissions:
+        data = doc.to_dict()
+        if data.get("is_verified", False):
+            verified_subjects.add(data.get("subjectId"))
+            
+    is_eligible = len(subject_ids) > 0 and all(sid in verified_subjects for sid in subject_ids)
+    
+    return jsonify({"eligible": is_eligible}), 200
+
+
 # ── FACULTY ENDPOINTS ─────────────────────────────────────────────────────────
 
 @app.route("/api/faculty/pending", methods=["GET"])
@@ -393,6 +437,90 @@ def _update_approval_status(approval_id, status, remark):
         "status": status,
         "emailNotified": email_sent
     }), 200
+
+
+@app.route("/api/faculty/submissions", methods=["GET"])
+@login_required
+@role_required("faculty")
+def get_faculty_submissions():
+    """Get assignments submission statuses of students for this faculty's subjects"""
+    faculty_id = current_user.id
+    
+    submissions = db.collection("submissions").where("facultyId", "==", faculty_id).get()
+    result = [doc.to_dict() for doc in submissions]
+    
+    return jsonify({"submissions": result}), 200
+
+
+@app.route("/api/faculty/update-submission", methods=["PUT"])
+@login_required
+@role_required("faculty")
+def update_submission():
+    """Update checkbox values for a submission"""
+    data = request.get_json()
+    submission_id = data.get("submissionId")
+    if not submission_id:
+        return jsonify({"error": "submissionId is required"}), 400
+        
+    # which fields they are trying to update
+    updates = {}
+    for key in ["ta1", "ta2", "repeat_ta", "assignment1", "assignment2", "assignment3"]:
+        if key in data:
+            updates[key] = data[key]
+            
+    if not updates:
+        return jsonify({"message": "No updates provided"}), 200
+        
+    doc_ref = db.collection("submissions").document(submission_id)
+    doc = doc_ref.get()
+    
+    if not doc.exists:
+        return jsonify({"error": "Submission not found"}), 404
+        
+    if doc.to_dict().get("is_verified", False):
+        return jsonify({"error": "Cannot edit verified submissions"}), 400
+        
+    updates["timestamp"] = datetime.now(timezone.utc).isoformat()
+    doc_ref.update(updates)
+    
+    return jsonify({"message": "Updated successfully"}), 200
+
+
+@app.route("/api/faculty/verify-submission", methods=["POST"])
+@login_required
+@role_required("faculty")
+def verify_submission():
+    """Verify a submission if all required components are true"""
+    data = request.get_json()
+    submission_id = data.get("submissionId")
+    
+    if not submission_id:
+        return jsonify({"error": "submissionId is required"}), 400
+        
+    doc_ref = db.collection("submissions").document(submission_id)
+    doc = doc_ref.get()
+    
+    if not doc.exists:
+        return jsonify({"error": "Submission not found"}), 404
+        
+    submission_data = doc.to_dict()
+    # Check if ta1, ta2, and all assignments are true
+    ta1 = submission_data.get("ta1", False)
+    ta2 = submission_data.get("ta2", False)
+    ass1 = submission_data.get("assignment1", False)
+    ass2 = submission_data.get("assignment2", False)
+    ass3 = submission_data.get("assignment3", False)
+    
+    if not (ta1 and ta2 and ass1 and ass2 and ass3):
+        return jsonify({"error": "All TA and Assignments must be completed before verification"}), 400
+        
+    doc_ref.update({
+        "is_verified": True,
+        "verified_by": current_user.name,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
+    
+    return jsonify({"message": "Submission verified successfully!"}), 200
 
 
 # ── ADMIN ENDPOINTS ───────────────────────────────────────────────────────────
