@@ -29,16 +29,19 @@ CORS(app, supports_credentials=True, origins="*")
 # ── Firebase Setup ─────────────────────────────────────────────────────────────
 def init_firebase():
     if not firebase_admin._apps:
-        # In production, use environment variable for service account JSON
         service_account_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "serviceAccountKey.json")
-        if os.path.exists(service_account_path):
+        firebase_service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+        
+        if firebase_service_account_json:
+            import json
+            service_account_info = json.loads(firebase_service_account_json)
+            cred = credentials.Certificate(service_account_info)
+        elif os.path.exists(service_account_path):
             cred = credentials.Certificate(service_account_path)
         else:
-            # For Render deployment — use environment variable
-            import json
-            service_account_info = json.loads(os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "{}"))
-            cred = credentials.Certificate(service_account_info)
-        firebase_admin.initialize_app(cred)
+            raise Exception("No Firebase credentials found!")
+            
+    firebase_admin.initialize_app(cred)
     return firestore.client()
 
 db = init_firebase()
