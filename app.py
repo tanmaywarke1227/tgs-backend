@@ -25,7 +25,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "tgs-secret-key-change-in-producti
 
 CORS(app, supports_credentials=True, origins=[
     "http://localhost:5173",
-    "http://localhost:000",
+    "http://localhost:5000",
     os.environ.get("FRONTEND_URL", "https://tgs-frontend-git-main-tanmay-warkes-projects.vercel.app/")
 ])
 
