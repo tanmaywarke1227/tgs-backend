@@ -38,7 +38,7 @@ CORS(app, supports_credentials=True, origins=[
 ])
 
 
-# ── Firebase Setup ─────────────────────────────────────────────────────────────
+## ── Firebase Setup ─────────────────────────────────────────────────────────────
 def init_firebase():
     if not firebase_admin._apps:
         # 1. Get the JSON string from Render environment
@@ -46,13 +46,10 @@ def init_firebase():
         
         if firebase_json:
             import json
-            # 2. Parse the string into a dictionary
             service_account_info = json.loads(firebase_json)
             
-            # --- THIS IS THE CRITICAL LINE YOU ARE MISSING ---
             if "private_key" in service_account_info:
                 service_account_info["private_key"] = service_account_info["private_key"].replace('\\n', '\n')
-            # ------------------------------------------------
             
             cred = credentials.Certificate(service_account_info)
         elif os.path.exists("serviceAccountKey.json"):
@@ -60,12 +57,24 @@ def init_firebase():
         else:
             raise Exception("No Firebase credentials found!")
 
+        # Initialize the app
         firebase_admin.initialize_app(cred)
 
+        # --- SEED DATA LOGIC ---
+        # We import it here locally to avoid circular import crashes
+        try:
+            from database.seed_data import seed_all
+            seed_all()
+            print("Database seeded successfully!")
+        except Exception as e:
+            print(f"Seeding skipped or failed: {e}")
+        # -----------------------
 
     return firestore.client()
 
+# Initialize the db instance
 db = init_firebase()
+
 
 # ── Firebase — Lazy Init ───────────────────────────────────────────────────────
 _db = None
