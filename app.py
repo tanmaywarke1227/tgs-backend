@@ -740,3 +740,10 @@ def after_request(response):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")
+
+@app.route('/api/dashboard') # or your actual route
+def get_data():
+    docs = db.collection('approvals').stream()
+    data = [doc.to_dict() for doc in docs]
+    print(f"DEBUG: Found {len(data)} documents in 'approvals'") # This will show in Render Logs
+    return jsonify(data)
