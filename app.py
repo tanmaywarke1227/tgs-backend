@@ -32,19 +32,28 @@ CORS(app, supports_credentials=True, origins=[
 # ── Firebase Setup ─────────────────────────────────────────────────────────────
 def init_firebase():
     if not firebase_admin._apps:
-        service_account_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "serviceAccountKey.json")
-        firebase_service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+        # 1. Get the JSON string from Render's environment
+        firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
         
-        if firebase_service_account_json:
+        if firebase_json:
             import json
-            service_account_info = json.loads(firebase_service_account_json)
+            # 2. Parse the string into a dictionary
+            service_account_info = json.loads(firebase_json)
+            
+            # 3. CRITICAL: Fix the newline characters in the private key
+            if "private_key" in service_account_info:
+                service_account_info["private_key"] = service_account_info["private_key"].replace('\\n', '\n')
+            
             cred = credentials.Certificate(service_account_info)
-        elif os.path.exists(service_account_path):
-            cred = credentials.Certificate(service_account_path)
+        
+        # 4. Fallback for local development if the environment variable isn't set
+        elif os.path.exists("serviceAccountKey.json"):
+            cred = credentials.Certificate("serviceAccountKey.json")
         else:
             raise Exception("No Firebase credentials found!")
-            
-    firebase_admin.initialize_app(cred)
+
+        firebase_admin.initialize_app(cred)
+
     return firestore.client()
 
 db = init_firebase()
@@ -63,9 +72,9 @@ def get_db():
             if firebase_json:
                 import json
                 service_account_info = json.loads(firebase_json)
-                cred = credentials.Certificate(service_account_info)
-            elif os.path.exists(service_account_path):
-                cred = credentials.Certificate(service_account_path)
+                cred = credentials.Certificate(r"D:\term-grant-slip\backend\serviceAccountKey.json")
+            elif os.path.exists(r"D:\term-grant-slip\backend\serviceAccountKey.json"):
+                cred = credentials.Certificate(r"D:\term-grant-slip\backend\serviceAccountKey.json")
             else:
                 raise Exception("No Firebase credentials found!")
             firebase_admin.initialize_app(cred)
