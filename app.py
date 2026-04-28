@@ -27,53 +27,43 @@ app = Flask(__name__)
 
 app.secret_key = os.environ.get("SECRET_KEY", "tgs-secret-key-change-in-production")
 
-CORS(app, supports_credentials=True, origins=[
-    "https://tgs-frontend-virid.vercel.app",
-    "http://localhost:5173"
-])
+CORS(app, supports_credentials=True, origins=[os.environ.get("https://tgs-frontend-virid.vercel.app")])
+
 
 
 ## ── Firebase Setup ─────────────────────────────────────────────────────────────
+# ── Firebase Setup ─────────────────────────────────────────────────────────────
 def init_firebase():
     if not firebase_admin._apps:
+        # 1. Get the JSON string from Render environment
         firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
         
         if firebase_json:
             import json
+            # 2. Parse the string into a dictionary
             service_account_info = json.loads(firebase_json)
+            
+            # 3. Fix the private key newline characters
             if "private_key" in service_account_info:
                 service_account_info["private_key"] = service_account_info["private_key"].replace('\\n', '\n')
+            
             cred = credentials.Certificate(service_account_info)
         elif os.path.exists("serviceAccountKey.json"):
+            # Fallback for local development
             cred = credentials.Certificate("serviceAccountKey.json")
         else:
             print("No Firebase credentials found.")
             return firestore.client()
 
+        # Initialize the app once
         firebase_admin.initialize_app(cred)
-        print("Firebase Admin SDK initialized.")
+        print("Firebase Admin SDK initialized successfully.")
 
-        # --- SEEDING LOGIC MOVED HERE ---
-        try:
-            import sys
-            # Add the database folder to the path so Python can find seed_data.py
-            database_path = os.path.join(os.getcwd(), 'database')
-            if database_path not in sys.path:
-                sys.path.append(database_path)
-            
-            from seed_data import seed_all
-            seed_all()
-            print("Database seeded successfully!")
-        except Exception as e:
-            print(f"Seeding skipped or failed: {e}")
-            
     return firestore.client()
-
-
-
 
 # Initialize the db instance
 db = init_firebase()
+
 
 
 # ── Firebase — Lazy Init ───────────────────────────────────────────────────────
