@@ -21,13 +21,8 @@ from functools import wraps
 
 # ── App Setup ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-from database.seed_data import seed_all
-with app.app_context():
-    try:
-        seed_all()
-        print("Database seeded successfully!")
-    except Exception as e:
-        print(f"Seeding error: {e}")
+
+
 
 
 app.secret_key = os.environ.get("SECRET_KEY", "tgs-secret-key-change-in-production")
@@ -49,19 +44,23 @@ def init_firebase():
             if "private_key" in service_account_info:
                 service_account_info["private_key"] = service_account_info["private_key"].replace('\\n', '\n')
             cred = credentials.Certificate(service_account_info)
-        elif os.environ.get("FLASK_ENV") == "development":
+        elif os.path.exists("serviceAccountKey.json"):
             cred = credentials.Certificate("serviceAccountKey.json")
         else:
-            # Fallback for Render if variable is missing
+            print("No Firebase credentials found.")
             return firestore.client()
 
         firebase_admin.initialize_app(cred)
+        print("Firebase Admin SDK initialized.")
 
-        # --- FIXED SEEDING LOGIC ---
+        # --- SEEDING LOGIC MOVED HERE ---
         try:
-            # This avoids the ModuleNotFoundError on Render
             import sys
-            sys.path.append(os.path.join(os.path.dirname(__file__), 'database'))
+            # Add the database folder to the path so Python can find seed_data.py
+            database_path = os.path.join(os.getcwd(), 'database')
+            if database_path not in sys.path:
+                sys.path.append(database_path)
+            
             from seed_data import seed_all
             seed_all()
             print("Database seeded successfully!")
@@ -69,6 +68,8 @@ def init_firebase():
             print(f"Seeding skipped or failed: {e}")
             
     return firestore.client()
+
+
 
 
 # Initialize the db instance
