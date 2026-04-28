@@ -21,6 +21,15 @@ from functools import wraps
 
 # ── App Setup ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
+from database.seed_data import seed_all
+with app.app_context():
+    try:
+        seed_all()
+        print("Database seeded successfully!")
+    except Exception as e:
+        print(f"Seeding error: {e}")
+
+
 app.secret_key = os.environ.get("SECRET_KEY", "tgs-secret-key-change-in-production")
 
 CORS(app, supports_credentials=True, origins=[
