@@ -23,7 +23,10 @@ from functools import wraps
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "tgs-secret-key-change-in-production")
 
-CORS(app, supports_credentials=True, origins="*", allow_headers="*", methods=["GET", "POST", "OPTIONS"])
+CORS(app, supports_credentials=True, origins=[
+    "https://tgs-frontend-virid.vercel.app",
+    "http://localhost:5173"
+])
 
 
 # ── Firebase Setup ─────────────────────────────────────────────────────────────
@@ -644,10 +647,13 @@ def health():
 # ── Run ───────────────────────────────────────────────────────────────────────
 @app.after_request
 def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', '*')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    origin = request.headers.get('Origin', '')
+    allowed = ['https://tgs-frontend-virid.vercel.app', 'http://localhost:5173']
+    if origin in allowed:
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
     return response
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
