@@ -41,36 +41,35 @@ CORS(app, supports_credentials=True, origins=[
 ## ── Firebase Setup ─────────────────────────────────────────────────────────────
 def init_firebase():
     if not firebase_admin._apps:
-        # 1. Get the JSON string from Render environment
         firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
         
         if firebase_json:
             import json
             service_account_info = json.loads(firebase_json)
-            
             if "private_key" in service_account_info:
                 service_account_info["private_key"] = service_account_info["private_key"].replace('\\n', '\n')
-            
             cred = credentials.Certificate(service_account_info)
-        elif os.path.exists("serviceAccountKey.json"):
+        elif os.environ.get("FLASK_ENV") == "development":
             cred = credentials.Certificate("serviceAccountKey.json")
         else:
-            raise Exception("No Firebase credentials found!")
+            # Fallback for Render if variable is missing
+            return firestore.client()
 
-        # Initialize the app
         firebase_admin.initialize_app(cred)
 
-        # --- SEED DATA LOGIC ---
-        # We import it here locally to avoid circular import crashes
+        # --- FIXED SEEDING LOGIC ---
         try:
-            from database.seed_data import seed_all
+            # This avoids the ModuleNotFoundError on Render
+            import sys
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'database'))
+            from seed_data import seed_all
             seed_all()
             print("Database seeded successfully!")
         except Exception as e:
             print(f"Seeding skipped or failed: {e}")
-        # -----------------------
-
+            
     return firestore.client()
+
 
 # Initialize the db instance
 db = init_firebase()
