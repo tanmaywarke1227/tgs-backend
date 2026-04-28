@@ -49,6 +49,33 @@ def init_firebase():
 
 db = init_firebase()
 
+# ── Firebase — Lazy Init ───────────────────────────────────────────────────────
+_db = None
+
+def get_db():
+    global _db
+    if _db is not None:
+        return _db
+    try:
+        if not firebase_admin._apps:
+            firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+            service_account_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "serviceAccountKey.json")
+            if firebase_json:
+                import json
+                service_account_info = json.loads(firebase_json)
+                cred = credentials.Certificate(service_account_info)
+            elif os.path.exists(service_account_path):
+                cred = credentials.Certificate(service_account_path)
+            else:
+                raise Exception("No Firebase credentials found!")
+            firebase_admin.initialize_app(cred)
+        _db = firestore.client()
+        print("Firebase connected")
+        return _db
+    except Exception as e:
+        print(f"Firebase error: {e}")
+        return None
+
 # ── Flask-Login Setup ─────────────────────────────────────────────────────────
 login_manager = LoginManager()
 login_manager.init_app(app)
