@@ -32,7 +32,7 @@ CORS(app, supports_credentials=True, origins=[
 # ── Firebase Setup ─────────────────────────────────────────────────────────────
 def init_firebase():
     if not firebase_admin._apps:
-        # 1. Get the JSON string from Render's environment
+        # 1. Get the JSON string from Render environment
         firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
         
         if firebase_json:
@@ -40,19 +40,19 @@ def init_firebase():
             # 2. Parse the string into a dictionary
             service_account_info = json.loads(firebase_json)
             
-            # 3. CRITICAL: Fix the newline characters in the private key
+            # --- THIS IS THE CRITICAL LINE YOU ARE MISSING ---
             if "private_key" in service_account_info:
                 service_account_info["private_key"] = service_account_info["private_key"].replace('\\n', '\n')
+            # ------------------------------------------------
             
             cred = credentials.Certificate(service_account_info)
-        
-        # 4. Fallback for local development if the environment variable isn't set
         elif os.path.exists("serviceAccountKey.json"):
             cred = credentials.Certificate("serviceAccountKey.json")
         else:
             raise Exception("No Firebase credentials found!")
 
         firebase_admin.initialize_app(cred)
+
 
     return firestore.client()
 
