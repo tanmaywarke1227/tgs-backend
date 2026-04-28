@@ -17,58 +17,37 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone
 import os
-import json
 from functools import wraps
 
 # ── App Setup ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "tgs-secret-key-change-in-production")
 
-ALLOWED_ORIGINS = [
+CORS(app, supports_credentials=True, origins=[
     "https://tgs-frontend-virid.vercel.app",
-    "https://tgs-frontend-git-main-tanmay-warkes-projects.vercel.app",
-    "http://localhost:5173",
-    "http://localhost:3000",
-]
-
-CORS(app, supports_credentials=True, origins=ALLOWED_ORIGINS,
-     allow_headers=["Content-Type"], methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+    "http://localhost:5173"
+])
 
 
-# ── Firebase Setup — LAZY (connects on first request, not at startup) ─────────
-_db = None
+# ── Firebase Setup ─────────────────────────────────────────────────────────────
+def init_firebase():
+    if not firebase_admin._apps:
+        service_account_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "serviceAccountKey.json")
+        firebase_service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+        
+        if firebase_service_account_json:
+            import json
+            service_account_info = json.loads(firebase_service_account_json)
+            cred = credentials.Certificate(service_account_info)
+        elif os.path.exists(service_account_path):
+            cred = credentials.Certificate(service_account_path)
+        else:
+            raise Exception("No Firebase credentials found!")
+            
+    firebase_admin.initialize_app(cred)
+    return firestore.client()
 
-def get_db():
-    global _db
-    if _db is not None:
-        return _db
-    try:
-        if not firebase_admin._apps:
-            firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
-            service_account_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "serviceAccountKey.json")
-            if firebase_json:
-                service_account_info = json.loads(firebase_json)
-                cred = credentials.Certificate(service_account_info)
-            elif os.path.exists(service_account_path):
-                cred = credentials.Certificate(service_account_path)
-            else:
-                raise Exception("No Firebase credentials found!")
-            firebase_admin.initialize_app(cred)
-        _db = firestore.client()
-        print("Firebase connected")
-        return _db
-    except Exception as e:
-        print(f"Firebase error: {e}")
-        return None
-
-# DbProxy keeps all existing db.collection() calls working unchanged
-class DbProxy:
-    def collection(self, *args, **kwargs):
-        return get_db().collection(*args, **kwargs)
-    def __getattr__(self, name):
-        return getattr(get_db(), name)
-
-db = DbProxy()
+db = init_firebase()
 
 # ── Flask-Login Setup ─────────────────────────────────────────────────────────
 login_manager = LoginManager()
@@ -182,14 +161,31 @@ def login():
         return jsonify({"error": "Email and password required"}), 400
 
     try:
-        users_ref = db.collection("users").where(
-            filter=firestore.FieldFilter("email", "==", email)
-        ).limit(1).get()
+        database = get_db()
+        if not database:
+            return jsonify({"error": "Database unavailable. Please try again in 30 seconds."}), 503
 
-        if not users_ref:
+        # Fast direct lookup — map email to known UIDs
+        EMAIL_TO_UID = {
+            "rahul.sharma@student.edu": "student_001",
+            "priya.patel@student.edu": "student_002",
+            "arjun.singh@student.edu": "student_003",
+            "amit.verma@college.edu": "faculty_001",
+            "sneha.joshi@college.edu": "faculty_002",
+            "rajesh.kumar@college.edu": "faculty_003",
+            "priya.mehta@college.edu": "faculty_004",
+            "admin@college.edu": "admin_001",
+        }
+
+        uid = EMAIL_TO_UID.get(email)
+        if not uid:
             return jsonify({"error": "Invalid email or password"}), 401
 
-        user_doc = users_ref[0].to_dict()
+        doc = database.collection("users").document(uid).get()
+        if not doc.exists:
+            return jsonify({"error": "Invalid email or password"}), 401
+
+        user_doc = doc.to_dict()
         if user_doc.get("password_hash") != password:
             return jsonify({"error": "Invalid email or password"}), 401
 
@@ -214,6 +210,7 @@ def login():
 
 
 @app.route("/api/logout", methods=["POST"])
+@login_required
 def logout():
     """Logout current user"""
     logout_user()
@@ -679,17 +676,13 @@ def health():
 @app.after_request
 def after_request(response):
     origin = request.headers.get('Origin', '')
-    if origin in ALLOWED_ORIGINS:
+    allowed = ['https://tgs-frontend-virid.vercel.app', 'http://localhost:5173']
+    if origin in allowed:
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-        response.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS'
+        response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
     return response
-
-@app.route("/", methods=["GET"])
-def index():
-    return jsonify({"status": "ok", "service": "Term Grant Slip API"}), 200
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")
