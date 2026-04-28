@@ -17,37 +17,58 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone
 import os
+import json
 from functools import wraps
 
 # ── App Setup ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "tgs-secret-key-change-in-production")
 
-CORS(app, supports_credentials=True, origins=[
+ALLOWED_ORIGINS = [
     "https://tgs-frontend-virid.vercel.app",
-    "http://localhost:5173"
-])
+    "https://tgs-frontend-git-main-tanmay-warkes-projects.vercel.app",
+    "http://localhost:5173",
+    "http://localhost:3000",
+]
+
+CORS(app, supports_credentials=True, origins=ALLOWED_ORIGINS,
+     allow_headers=["Content-Type"], methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
 
-# ── Firebase Setup ─────────────────────────────────────────────────────────────
-def init_firebase():
-    if not firebase_admin._apps:
-        service_account_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "serviceAccountKey.json")
-        firebase_service_account_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
-        
-        if firebase_service_account_json:
-            import json
-            service_account_info = json.loads(firebase_service_account_json)
-            cred = credentials.Certificate(service_account_info)
-        elif os.path.exists(service_account_path):
-            cred = credentials.Certificate(service_account_path)
-        else:
-            raise Exception("No Firebase credentials found!")
-            
-    firebase_admin.initialize_app(cred)
-    return firestore.client()
+# ── Firebase Setup — LAZY (connects on first request, not at startup) ─────────
+_db = None
 
-db = init_firebase()
+def get_db():
+    global _db
+    if _db is not None:
+        return _db
+    try:
+        if not firebase_admin._apps:
+            firebase_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON")
+            service_account_path = os.environ.get("FIREBASE_SERVICE_ACCOUNT", "serviceAccountKey.json")
+            if firebase_json:
+                service_account_info = json.loads(firebase_json)
+                cred = credentials.Certificate(service_account_info)
+            elif os.path.exists(service_account_path):
+                cred = credentials.Certificate(service_account_path)
+            else:
+                raise Exception("No Firebase credentials found!")
+            firebase_admin.initialize_app(cred)
+        _db = firestore.client()
+        print("Firebase connected")
+        return _db
+    except Exception as e:
+        print(f"Firebase error: {e}")
+        return None
+
+# DbProxy keeps all existing db.collection() calls working unchanged
+class DbProxy:
+    def collection(self, *args, **kwargs):
+        return get_db().collection(*args, **kwargs)
+    def __getattr__(self, name):
+        return getattr(get_db(), name)
+
+db = DbProxy()
 
 # ── Flask-Login Setup ─────────────────────────────────────────────────────────
 login_manager = LoginManager()
@@ -193,7 +214,6 @@ def login():
 
 
 @app.route("/api/logout", methods=["POST"])
-@login_required
 def logout():
     """Logout current user"""
     logout_user()
@@ -659,13 +679,17 @@ def health():
 @app.after_request
 def after_request(response):
     origin = request.headers.get('Origin', '')
-    allowed = ['https://tgs-frontend-virid.vercel.app', 'http://localhost:5173']
-    if origin in allowed:
+    if origin in ALLOWED_ORIGINS:
         response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-        response.headers['Access-Control-Allow-Methods'] = 'GET,POST,OPTIONS'
+        response.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS'
     return response
+
+@app.route("/", methods=["GET"])
+def index():
+    return jsonify({"status": "ok", "service": "Term Grant Slip API"}), 200
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")
