@@ -23,7 +23,7 @@ from functools import wraps
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "tgs-secret-key-change-in-production")
 
-CORS(app, supports_credentials=True, origins=["http://localhost:5173", "http://localhost:5000", "https://tgs-frontend-virid.vercel.app"])
+CORS(app, supports_credentials=True, origins="*", allow_headers="*", methods=["GET", "POST", "OPTIONS"])
 
 
 # ── Firebase Setup ─────────────────────────────────────────────────────────────
@@ -642,6 +642,13 @@ def health():
 
 
 # ── Run ───────────────────────────────────────────────────────────────────────
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=os.environ.get("FLASK_DEBUG", "false").lower() == "true")
