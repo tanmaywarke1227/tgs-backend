@@ -142,43 +142,54 @@ def get_approval_email_body(student_name, subject_name, status, remark=""):
 
 # ── AUTH ENDPOINTS ────────────────────────────────────────────────────────────
 
-@app.route("/api/login", methods=["POST"])
+@app.route("/api/login", methods=["POST", "OPTIONS"])
 def login():
-    """Login API for all roles"""
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    if not db:
+        return jsonify({"error": "Database not connected"}), 500
+
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
     email = data.get("email", "").strip().lower()
     password = data.get("password", "").strip()
 
     if not email or not password:
-        return jsonify({"error": "Email and password are required"}), 400
+        return jsonify({"error": "Email and password required"}), 400
 
-    # Find user by email
-    users_ref = db.collection("users").where("email", "==", email).limit(1).get()
+    try:
+        users_ref = db.collection("users").where(
+            filter=firestore.FieldFilter("email", "==", email)
+        ).limit(1).get()
 
-    if not users_ref:
-        return jsonify({"error": "Invalid email or password"}), 401
+        if not users_ref:
+            return jsonify({"error": "Invalid email or password"}), 401
 
-    user_doc = users_ref[0].to_dict()
+        user_doc = users_ref[0].to_dict()
+        if user_doc.get("password_hash") != password:
+            return jsonify({"error": "Invalid email or password"}), 401
 
-    # Simple password check (in production, use bcrypt)
-    if user_doc.get("password_hash") != password:
-        return jsonify({"error": "Invalid email or password"}), 401
+        user = User(user_doc["uid"], user_doc["name"], user_doc["email"], user_doc["role"])
+        login_user(user)
 
-    user = User(user_doc["uid"], user_doc["name"], user_doc["email"], user_doc["role"])
-    login_user(user)
-
-    return jsonify({
-        "message": "Login successful",
-        "user": {
-            "uid": user_doc["uid"],
-            "name": user_doc["name"],
-            "email": user_doc["email"],
-            "role": user_doc["role"],
-            "department": user_doc.get("department", ""),
-            "rollNumber": user_doc.get("rollNumber", ""),
-            "semester": user_doc.get("semester", ""),
-        }
-    }), 200
+        return jsonify({
+            "message": "Login successful",
+            "user": {
+                "uid": user_doc["uid"],
+                "name": user_doc["name"],
+                "email": user_doc["email"],
+                "role": user_doc["role"],
+                "department": user_doc.get("department", ""),
+                "rollNumber": user_doc.get("rollNumber", ""),
+                "semester": user_doc.get("semester", ""),
+            }
+        }), 200
+    except Exception as e:
+        print(f"Login error: {e}")
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
 @app.route("/api/logout", methods=["POST"])
@@ -211,7 +222,7 @@ def get_student_status():
     student_id = current_user.id
 
     approvals = db.collection("approvals")\
-        .where("studentId", "==", student_id)\
+        .where(filter=firestore.FieldFilter("studentId", "==", student_id))\
         .get()
 
     result = []
@@ -274,7 +285,7 @@ def get_student_subjects():
 def get_student_submissions():
     """Get all submission statuses for the logged-in student"""
     student_id = current_user.id
-    submissions = db.collection("submissions").where("studentId", "==", student_id).get()
+    submissions = db.collection("submissions").where(filter=firestore.FieldFilter("studentId", "==", student_id)).get()
     
     result = []
     for doc in submissions:
@@ -300,7 +311,7 @@ def check_eligibility():
     if not subject_ids:
         return jsonify({"eligible": False, "message": "No subjects enrolled."}), 200
         
-    submissions = db.collection("submissions").where("studentId", "==", student_id).get()
+    submissions = db.collection("submissions").where(filter=firestore.FieldFilter("studentId", "==", student_id)).get()
     verified_subjects = set()
     for doc in submissions:
         data = doc.to_dict()
@@ -322,7 +333,7 @@ def get_faculty_pending():
     faculty_id = current_user.id
 
     approvals = db.collection("approvals")\
-        .where("facultyId", "==", faculty_id)\
+        .where(filter=firestore.FieldFilter("facultyId", "==", faculty_id))\
         .get()
 
     result = []
@@ -449,7 +460,7 @@ def get_faculty_submissions():
     """Get assignments submission statuses of students for this faculty's subjects"""
     faculty_id = current_user.id
     
-    submissions = db.collection("submissions").where("facultyId", "==", faculty_id).get()
+    submissions = db.collection("submissions").where(filter=firestore.FieldFilter("facultyId", "==", faculty_id)).get()
     result = [doc.to_dict() for doc in submissions]
     
     return jsonify({"submissions": result}), 200
@@ -533,13 +544,13 @@ def verify_submission():
 @role_required("admin")
 def admin_overview():
     """Admin: full overview of all students and approval status"""
-    students = db.collection("users").where("role", "==", "student").get()
+    students = db.collection("users").where(filter=firestore.FieldFilter("role", "==", "student")).get()
     result = []
 
     for student_doc in students:
         student = student_doc.to_dict()
         approvals = db.collection("approvals")\
-            .where("studentId", "==", student["uid"])\
+            .where(filter=firestore.FieldFilter("studentId", "==", student["uid"]))\
             .get()
 
         approval_list = [a.to_dict() for a in approvals]
@@ -573,7 +584,7 @@ def admin_users():
     role = request.args.get("role")
     query = db.collection("users")
     if role:
-        query = query.where("role", "==", role)
+        query = query.where(filter=firestore.FieldFilter("role", "==", role))
 
     users = []
     for doc in query.get():
@@ -607,7 +618,7 @@ def admin_override():
 def get_notifications():
     """Get notifications for current user"""
     notifs = db.collection("notifications")\
-        .where("userId", "==", current_user.id)\
+        .where(filter=firestore.FieldFilter("userId", "==", current_user.id))\
         .order_by("createdAt", direction=firestore.Query.DESCENDING)\
         .limit(20)\
         .get()
@@ -623,8 +634,8 @@ def get_notifications():
 def mark_notifications_read():
     """Mark all notifications as read"""
     notifs = db.collection("notifications")\
-        .where("userId", "==", current_user.id)\
-        .where("read", "==", False)\
+        .where(filter=firestore.FieldFilter("userId", "==", current_user.id))\
+        .where(filter=firestore.FieldFilter("read", "==", False))\
         .get()
 
     for n in notifs:
